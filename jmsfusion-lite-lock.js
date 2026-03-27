@@ -1,6 +1,8 @@
 (function () {
   "use strict";
 
+  var studioImgCache = Object.create(null);
+
   var enforced = {
     enableSlider: false,
     enableNotifications: false,
@@ -78,10 +80,107 @@
     } catch (_) {}
   }
 
+  function getUserId() {
+    try {
+      return (
+        window.ApiClient?._serverInfo?.UserId ||
+        window.ApiClient?._currentUser?.Id ||
+        localStorage.getItem("userId") ||
+        ""
+      );
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function parseStudioIdFromHref(href) {
+    try {
+      if (!href) return "";
+      var m = String(href).match(/[?&]studioId=([^&]+)/i);
+      return m ? decodeURIComponent(m[1]) : "";
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function authHeaders() {
+    try {
+      if (window.ApiClient && typeof window.ApiClient.getAuthenticationHeader === "function") {
+        return { "X-Emby-Authorization": window.ApiClient.getAuthenticationHeader("MediaBrowser Client=JMSFusion") };
+      }
+    } catch (_) {}
+    return {};
+  }
+
+  async function fetchStudioImage(studioId) {
+    if (!studioId) return "";
+    if (studioImgCache[studioId]) return studioImgCache[studioId];
+
+    var userId = getUserId();
+    if (!userId) return "";
+
+    var url = "/Users/" + encodeURIComponent(userId) + "/Items?IncludeItemTypes=Movie,Series&Recursive=true&Limit=20&SortBy=Random&SortOrder=Descending&Fields=ImageTags,PrimaryImageTag,BackdropImageTags&StudioIds=" + encodeURIComponent(studioId);
+
+    try {
+      var res = await fetch(url, {
+        method: "GET",
+        credentials: "same-origin",
+        headers: authHeaders()
+      });
+      if (!res.ok) return "";
+      var data = await res.json();
+      var items = Array.isArray(data && data.Items) ? data.Items : [];
+      if (!items.length) return "";
+
+      var item = items[0];
+      var bdTag = item && item.BackdropImageTags && item.BackdropImageTags[0];
+      if (bdTag) {
+        var bdUrl = "/Items/" + encodeURIComponent(item.Id) + "/Images/Backdrop/0?tag=" + encodeURIComponent(bdTag) + "&quality=90";
+        studioImgCache[studioId] = bdUrl;
+        return bdUrl;
+      }
+
+      var pTag = (item && item.ImageTags && item.ImageTags.Primary) || (item && item.PrimaryImageTag);
+      if (pTag) {
+        var pUrl = "/Items/" + encodeURIComponent(item.Id) + "/Images/Primary?tag=" + encodeURIComponent(pTag) + "&fillHeight=320&quality=90";
+        studioImgCache[studioId] = pUrl;
+        return pUrl;
+      }
+    } catch (_) {}
+
+    return "";
+  }
+
+  async function replaceBundledStudioPosters() {
+    try {
+      var cards = document.querySelectorAll("#studio-hubs a.hub-card");
+      for (var i = 0; i < cards.length; i++) {
+        var card = cards[i];
+        if (!card) continue;
+        var img = card.querySelector("img.hub-img");
+        if (!img) continue;
+
+        var src = String(img.getAttribute("src") || img.src || "");
+        var isBundled = src.indexOf("/slider/src/images/studios/") !== -1;
+        if (!isBundled) continue;
+
+        var studioId = parseStudioIdFromHref(card.getAttribute("href") || "");
+        if (!studioId) continue;
+
+        var realImg = await fetchStudioImage(studioId);
+        if (!realImg) continue;
+
+        img.classList.remove("hub-logo");
+        if (img.src !== realImg) img.src = realImg;
+      }
+    } catch (_) {}
+  }
+
   function runEnforcement() {
     enforceLocalStorage();
     enforceRuntimeConfig();
     removeDuplicateSections();
+    replaceBundledStudioPosters();
   }
 
   runEnforcement();
@@ -89,6 +188,7 @@
   var mo = new MutationObserver(function () {
     removeDuplicateSections();
     enforceRuntimeConfig();
+    replaceBundledStudioPosters();
   });
 
   try {
