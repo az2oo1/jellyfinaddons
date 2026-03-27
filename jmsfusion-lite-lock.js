@@ -31,17 +31,14 @@
     enableTrailerThenVideo: true
   };
 
-  function setLs(k, v) {
-    try {
-      localStorage.setItem(k, typeof v === "string" ? v : String(v));
-    } catch (_) {}
-  }
-
   function enforceLocalStorage() {
     var keys = Object.keys(enforced);
     for (var i = 0; i < keys.length; i++) {
       var k = keys[i];
-      setLs(k, enforced[k]);
+      try {
+        var v = enforced[k];
+        localStorage.setItem(k, typeof v === "string" ? v : String(v));
+      } catch (_) {}
     }
 
     try {
@@ -69,21 +66,11 @@
 
   function removeDuplicateSections() {
     try {
-      var selectors = [
-        "#slides-container",
-        "#recent-rows",
-        "#genre-hubs",
-        "#personal-recommendations",
-        ".personal-recs-section",
-        ".director-rows-wrapper",
-        ".recent-row-section"
-      ];
-
-      var nodes = document.querySelectorAll(selectors.join(","));
+      var nodes = document.querySelectorAll(
+        "#slides-container,#recent-rows,#genre-hubs,#personal-recommendations,.personal-recs-section,.director-rows-wrapper,.recent-row-section"
+      );
       for (var i = 0; i < nodes.length; i++) {
         var el = nodes[i];
-        if (!el) continue;
-        if (el.id === "studio-hubs") continue;
         if (el.closest("#studio-hubs")) continue;
         if (el.closest("#itemDetailPage")) continue;
         el.remove();
@@ -113,5 +100,4 @@
 
   setInterval(runEnforcement, 1200);
 
-  window.__JMS_LITE_LOCK_ACTIVE__ = true;
 })();
